@@ -5,6 +5,8 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
+    "seed": "node src/db/seed.js",
+    "create-db": "node src/db/create-db.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
