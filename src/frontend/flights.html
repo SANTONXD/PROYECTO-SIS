@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <title>Vuelos - Reservas</title>
+</head>
+<body>
+  <header>
+    <h1>Vuelos disponibles</h1>
+    <p>
+      <button id="logoutBtn">Cerrar sesión</button>
+      <button id="myResBtn">Ver mis reservas</button>
+      <span id="userInfo"></span>
+    </p>
+  </header>
+
+  <main>
+    <section aria-labelledby="flightsTitle">
+      <h2 id="flightsTitle">Lista de vuelos</h2>
+      <ul id="flightsList"></ul>
+    </section>
+
+    <section aria-labelledby="seatsTitle" id="seatsSection" hidden>
+      <h2 id="seatsTitle">Asientos del vuelo <span id="flightLabel"></span></h2>
+      <ul id="seatsList"></ul>
+    </section>
+
+    <section id="msg" aria-live="polite"></section>
+  </main>
+
+  <script>
+    const API_BASE = 'http://localhost:4000';
+    const flightsList = document.getElementById('flightsList');
+    const seatsSection = document.getElementById('seatsSection');
+    const seatsList = document.getElementById('seatsList');
+    const flightLabel = document.getElementById('flightLabel');
+    const msg = document.getElementById('msg');
+    const logoutBtn = document.getElementById('logoutBtn');
+    const myResBtn = document.getElementById('myResBtn');
+    const userInfo = document.getElementById('userInfo');
+
+    const token = localStorage.getItem('token');
+    if (!token) {
+      // si no hay token, redirigir al login
+      location.href = 'login.html';
+    } else {
+      userInfo.textContent = ' (autenticado)';
+    }
+
+    // Cerrar sesión
+    logoutBtn.addEventListener('click', () => {
+      localStorage.removeItem('token');
+      location.href = 'login.html';
+    });
+
+    // Ver mis reservas
+    myResBtn.addEventListener('click', () => {
+      location.href = 'my-reservations.html';
+    });
+
+    // Cargar vuelos
+    async function loadFlights() {
+      msg.textContent = 'Cargando vuelos...';
+      try {
+        const res = await fetch(API_BASE + '/flights');
+        const flights = await res.json();
+        flightsList.innerHTML = '';
+        if (!Array.isArray(flights) || flights.length === 0) {
+          flightsList.innerHTML = '<li>No hay vuelos.</li>';
+          msg.textContent = '';
+          return;
+        }
+        flights.forEach(f => {
+          const li = document.createElement('li');
+          li.innerHTML = `<strong>#${f.id}</strong> ${f.origin} → ${f.destination} (Salida: ${f.departure})
+            <button data-id="${f.id}" data-origin="${f.origin}" data-dest="${f.destination}">Ver asientos</button>`;
+          flightsList.appendChild(li);
+        });
+        msg.textContent = '';
+      } catch (err) {
+        msg.textContent = 'Error cargando vuelos: ' + err.message;
+      }
+    }
+
+    // Ver asientos
+    flightsList.addEventListener('click', async (e) => {
+      const btn = e.target.closest('button[data-id]');
+      if (!btn) return;
+      const flightId = btn.getAttribute('data-id');
+      const origin = btn.getAttribute('data-origin');
+      const dest = btn.getAttribute('data-dest');
+      await loadSeats(flightId, origin + ' → ' + dest);
+    });
+
+    // Cargar asientos
+    async function loadSeats(flightId, flightLabelText) {
+      msg.textContent = 'Cargando asientos...';
+      seatsList.innerHTML = '';
+      seatsSection.hidden = false;
+      flightLabel.textContent = flightLabelText;
+
+      try {
+        const res = await fetch(API_BASE + '/flights/' + flightId + '/seats');
+        const seats = await res.json();
+
+        if (!Array.isArray(seats) || seats.length === 0) {
+          seatsList.innerHTML = '<li>No hay asientos.</li>';
+          msg.textContent = '';
+          return;
+        }
+
+        seats.forEach(s => {
+          const li = document.createElement('li');
+          li.innerHTML = `${s.seat_number} — ${s.status}
+            ${s.status === 'available' ? `<button data-seat="${s.seat_number}" data-flight="${flightId}">Reservar</button>` : ''}`;
+          seatsList.appendChild(li);
+        });
+        msg.textContent = '';
+      } catch (err) {
+        msg.textContent = 'Error cargando asientos: ' + err.message;
+      }
+    }
+
+    // Reservar asiento
+    seatsList.addEventListener('click', async (e) => {
+      const btn = e.target.closest('button[data-seat]');
+      if (!btn) return;
+      const seat = btn.getAttribute('data-seat');
+      const flightId = btn.getAttribute('data-flight');
+
+      if (!confirm(`Confirmar reserva: vuelo ${flightId}, asiento ${seat}?`)) return;
+
+      msg.textContent = 'Reservando...';
+      try {
+        const res = await fetch(API_BASE + '/reservations', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + token
+          },
+          body: JSON.stringify({ flight_id: Number(flightId), seat_number: seat })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          msg.textContent = data.error || JSON.stringify(data);
+          return;
+        }
+        msg.textContent = '¡Reserva exitosa! Código: ' + data.code;
+        await loadSeats(flightId, flightLabel.textContent);
+      } catch (err) {
+        msg.textContent = 'Error al reservar: ' + err.message;
+      }
+    });
+
+    // Iniciar
+    loadFlights();
+  </script>
+</body>
+</html>
