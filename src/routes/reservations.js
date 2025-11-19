@@ -85,4 +85,33 @@ router.get('/my-reservations', async (req, res) => {
   }
 });
 
+// Procesar pago de una reserva
+router.post('/:id/pay', async (req, res) => {
+  const userId = req.user.userId;
+  const reservationId = req.params.id;
+
+  const trx = await db.transaction();
+  try {
+    const reservation = await trx('reservations').where({ id: reservationId, user_id: userId }).first();
+    if (!reservation) {
+      await trx.rollback();
+      return res.status(404).json({ error: 'Reserva no encontrada' });
+    }
+
+    // Marcar reserva como pagada
+    await trx('reservations').where({ id: reservationId }).update({ status: 'paid' });
+
+    // Marcar asiento como vendido
+    await trx('seats').where({ id: reservation.seat_id }).update({ status: 'sold' });
+
+    await trx.commit();
+
+    return res.json({ success: true, message: 'Pago procesado correctamente' });
+  } catch (err) {
+    await trx.rollback();
+    console.error(err);
+    return res.status(500).json({ error: 'Error procesando el pago' });
+  }
+});
+
 module.exports = router;
