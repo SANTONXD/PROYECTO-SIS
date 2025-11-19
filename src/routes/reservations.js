@@ -87,29 +87,65 @@ router.get('/my-reservations', async (req, res) => {
 
 // Procesar pago de una reserva
 router.post('/:id/pay', async (req, res) => {
+  // Logs para depurar token / usuario
+  console.log('--- /:id/pay request ---');
+  console.log('Authorization header:', req.headers.authorization);
+  console.log('Cookie header:', req.headers.cookie);
+  console.log('req.user (before auth check):', req.user);
+
+  // Verificar que el middleware de auth haya puesto req.user
+  if (!req.user || !req.user.userId) {
+    console.warn('No token / usuario no autenticado');
+    return res.status(401).json({ error: 'No token' });
+  }
+
   const userId = req.user.userId;
-  const reservationId = req.params.id;
+  const reservationId = Number(req.params.id);
 
   const trx = await db.transaction();
   try {
-    const reservation = await trx('reservations').where({ id: reservationId, user_id: userId }).first();
+    // Bloquear la reserva para evitar race conditions
+    const reservation = await trx('reservations')
+      .where({ id: reservationId, user_id: userId })
+      .forUpdate()
+      .first();
+
     if (!reservation) {
       await trx.rollback();
       return res.status(404).json({ error: 'Reserva no encontrada' });
     }
 
-    // Marcar reserva como pagada
-    await trx('reservations').where({ id: reservationId }).update({ status: 'paid' });
+    if (reservation.status === 'paid') {
+      await trx.rollback();
+      return res.status(409).json({ error: 'Reserva ya pagada' });
+    }
 
-    // Marcar asiento como vendido
+    // Bloquear el asiento asociado
+    const seat = await trx('seats')
+      .where({ id: reservation.seat_id })
+      .forUpdate()
+      .first();
+
+    if (!seat) {
+      await trx.rollback();
+      return res.status(404).json({ error: 'Asiento de la reserva no encontrado' });
+    }
+
+    if (seat.status === 'sold') {
+      await trx.rollback();
+      return res.status(409).json({ error: 'Asiento ya vendido' });
+    }
+
+    // Marcar reserva como pagada y asiento como vendido
+    await trx('reservations').where({ id: reservationId }).update({ status: 'paid' });
     await trx('seats').where({ id: reservation.seat_id }).update({ status: 'sold' });
 
     await trx.commit();
 
     return res.json({ success: true, message: 'Pago procesado correctamente' });
   } catch (err) {
-    await trx.rollback();
-    console.error(err);
+    try { await trx.rollback(); } catch (rbErr) { console.error('Rollback error:', rbErr); }
+    console.error('Error procesando pago:', err);
     return res.status(500).json({ error: 'Error procesando el pago' });
   }
 });
