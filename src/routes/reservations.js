@@ -137,7 +137,7 @@ router.post('/:id/pay', async (req, res) => {
     }
 
     // Marcar reserva como pagada y asiento como vendido
-    await trx('reservations').where({ id: reservationId }).update({ status: 'paid' });
+    await trx('reservations').where({ id: reservationId }).update({ status: 'confirmed' });
     await trx('seats').where({ id: reservation.seat_id }).update({ status: 'sold' });
 
     await trx.commit();
