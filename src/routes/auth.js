@@ -32,20 +32,24 @@ router.post('/register', async (req, res) => {
     });
   }
 
-  try {
-    const hashed = await bcrypt.hash(password, 10);
-    const [id] = await db('users').insert({ name, email, password: hashed });
-    res.status(201).json({ id, email });
-  } catch (err) {
-    console.error(err);
+try {
+  const hashed = await bcrypt.hash(password, 10);
 
-    if (err.code === 'ER_DUP_ENTRY' || err.code === '23505' || err.errno === 1062) {
-      return res.status(400).json({ error: 'Email ya registrado' });
-    }
+  const [newUser] = await db('users')
+    .insert({ name, email, password: hashed })
+    .returning('id'); // <- NECESARIO EN POSTGRES
 
-    res.status(400).json({ error: 'Error al registrar usuario' });
+  res.status(201).json({ id: newUser.id, email });
+} catch (err) {
+  console.error(err);
+
+  if (err.code === 'ER_DUP_ENTRY' || err.code === '23505' || err.errno === 1062) {
+    return res.status(400).json({ error: 'Email ya registrado' });
   }
-});
+
+  res.status(400).json({ error: 'Error al registrar usuario' });
+}
+
 
 // ==================== LOGIN ====================
 router.post('/login', async (req, res) => {
@@ -67,3 +71,4 @@ router.post('/login', async (req, res) => {
 });
 
 module.exports = router;
+
